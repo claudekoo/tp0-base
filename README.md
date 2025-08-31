@@ -226,3 +226,35 @@ Para validar la implementación, se debe ejecutar el siguiente comando tras leva
 ./validar-echo-server.sh
 ```
 
+### Ejercicio 4
+
+Para manejar la señal SIGTERM de forma graceful se modificó tanto el cliente como el servidor. Esto implica que ambas aplicaciones capturan la señal SIGTERM usando signal handlers, cierran todos los recursos y loguean el cierre de cada recurso.
+
+#### Servidor (Python):
+- Se agregó un signal handler para SIGTERM que establece una bandera `_running = False`
+- El loop principal del servidor verifica esta bandera para terminar el bucle
+- Se cierra el socket del servidor en el handler de señales y en el bloque finally
+- Se logea cada cierre de conexión cliente
+
+#### Cliente (Go):
+- Se utiliza un channel para capturar la signal SIGTERM
+- El loop del cliente se ejecuta en una goroutine separada
+- Se implementó un método `Shutdown()` que establece una bandera de cierre y cierra conexiones
+- El main function espera tanto la terminación normal como las señales para actuar apropiadamente
+
+#### Ejecución
+
+Para probar la salida graceful se puede levantar los contenedores y luego enviar una señal SIGTERM:
+
+```bash
+make docker-compose-up
+
+docker kill -s SIGTERM <container_id>
+```
+
+Luego para comprobar que el cierre fue graceful, ver los logs de los contenedores:
+
+```
+docker logs <container_id>
+```
+

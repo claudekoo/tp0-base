@@ -1,13 +1,27 @@
 import socket
 import logging
+import signal
+import sys
 
 
 class Server:
     def __init__(self, port, listen_backlog):
         # Initialize server socket
         self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._server_socket.bind(('', port))
         self._server_socket.listen(listen_backlog)
+        self._running = True
+        
+        signal.signal(signal.SIGTERM, self._signal_handler)
+
+    def _signal_handler(self, sig, frame):
+        logging.info("action: sigterm_received | result: success")
+        self._running = False
+        if self._server_socket:
+            logging.info("action: close_server_socket | result: success")
+            self._server_socket.close()
+        sys.exit(0)
 
     def run(self):
         """
@@ -18,11 +32,21 @@ class Server:
         finishes, servers starts to accept new connections again
         """
 
-        # TODO: Modify this program to handle signal to graceful shutdown
-        # the server
-        while True:
-            client_sock = self.__accept_new_connection()
-            self.__handle_client_connection(client_sock)
+        try:
+            while self._running:
+                try:
+                    client_sock = self.__accept_new_connection()
+                    self.__handle_client_connection(client_sock)
+                except OSError as e:
+                    if self._running:
+                        logging.error(f"action: accept_connections | result: fail | error: {e}")
+                    break
+        except KeyboardInterrupt:
+            logging.info("action: sigterm_received | result: success")
+        finally:
+            if self._server_socket:
+                logging.info("action: close_server_socket | result: success")
+                self._server_socket.close()
 
     def __handle_client_connection(self, client_sock):
         """
@@ -39,8 +63,9 @@ class Server:
             # TODO: Modify the send to avoid short-writes
             client_sock.send("{}\n".format(msg).encode('utf-8'))
         except OSError as e:
-            logging.error("action: receive_message | result: fail | error: {e}")
+            logging.error(f"action: receive_message | result: fail | error: {e}")
         finally:
+            logging.info("action: close_client_socket | result: success")
             client_sock.close()
 
     def __accept_new_connection(self):
