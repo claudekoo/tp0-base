@@ -185,3 +185,11 @@ La corrección personal tendrá en cuenta la calidad del código entregado y cas
 
 Para resolver el ejercicio 1 se utilizó un script de python `mi-generador.py` para llamarlo desde generar-compose.sh. Inicialmente este fue implementado con líneas hardcodeadas según el archivo ya presente `docker-compose-dev.yaml`, pero a medida que fue evolucionando el TP (y por lógica común) se vio la necesidad de realizar un procesamiento más dinámico; por lo que se decidió desde `mi-generador.py` leer dicho archivo identificando las secciones para generar el archivo.
  
+#### Ejecución
+
+Para ejecutar el generador de archivos se debe utilizar el siguiente comando:
+
+```bash
+./generar-compose.sh <nombre_archivo_salida> <numero_clientes>
+```
+
