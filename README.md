@@ -258,3 +258,60 @@ Luego para comprobar que el cierre fue graceful, ver los logs de los contenedore
 docker logs <container_id>
 ```
 
+### Ejercicio 5
+
+#### Protocolo de Comunicación
+
+Para evitar short reads/writes, se implementó un protocolo binario que permite determinar el tamaño exacto de cada parte de los mensajes en caso de ser variables. Para minimizar la sobrecarga de datos, todos los datos que pueden ser pasados a números enteros se envían parseados como tales.
+
+**Mensaje de Apuesta (Cliente a Servidor):**
+```
+| Campo        | Tipo      | Tamaño    | Descripción                    |
+|--------------|-----------|-----------|--------------------------------|
+| client_id    | uint32    | 4 bytes   | ID del cliente (big endian)    |
+| nombre_len   | uint32    | 4 bytes   | Longitud del nombre            |
+| nombre       | string    | variable  | Nombre del apostador           |
+| apellido_len | uint32    | 4 bytes   | Longitud del apellido          |
+| apellido     | string    | variable  | Apellido del apostador         |
+| documento    | uint32    | 4 bytes   | DNI del apostador              |
+| nacimiento   | uint32    | 4 bytes   | Fecha YYYYMMDD                 |
+| numero       | uint32    | 4 bytes   | Número apostado                |
+```
+
+**Respuesta (Servidor a Cliente):**
+```
+| Campo     | Tipo   | Tamaño  | Descripción                |
+|-----------|--------|---------|----------------------------|
+| response  | uint8  | 1 byte  | 0=OK, 1=ERROR             |
+```
+
+Para separar la capa de dominio y la capa de comunicación, todo lo relacionado al protocolo se encuentra en archivos `protocol.go` y `protocol.py`.
+
+#### Manejo de Errores
+
+- Se manejan errores de conexión, serialización/deserialización y validación
+- Logging detallado de errores con contexto específico
+
+#### Configuración
+
+Los clientes reciben datos de apuesta a través de variables de entorno:
+- `CLI_NOMBRE`: Nombre del apostador
+- `CLI_APELLIDO`: Apellido del apostador  
+- `CLI_DOCUMENTO`: DNI del apostador
+- `CLI_NACIMIENTO`: Fecha de nacimiento (YYYY-MM-DD)
+- `CLI_NUMERO`: Número apostado
+
+#### Ejecución
+
+Para el ejercicio 5 se incorporaron datos de prueba en el archivo `docker-compose-dev.yaml` y en el script `mi-generador.py` (para hasta 5 clientes).
+
+Si se desea ejecutar el sistema y probar el flujo completo:
+
+```bash
+./generar-compose.sh docker-compose-dev.yaml 5
+
+make docker-compose-up
+
+make docker-compose-logs
+```
+
