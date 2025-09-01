@@ -1,9 +1,13 @@
-import struct
 import logging
 from typing import Optional, Tuple
 
 RESPONSE_OK = 0
 RESPONSE_ERROR = 1
+
+def unpack_uint32_be(data: bytes) -> int:
+    if len(data) != 4:
+        raise ValueError(f"Expected 4 bytes, got {len(data)}")
+    return (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3]
 
 def recv_all(sock, n):
     """Helper function to receive exactly n bytes"""
@@ -28,14 +32,14 @@ def receive_bet(client_sock) -> Optional[Tuple[str, str, str, str, str, str]]:
         if not client_id_bytes:
             logging.error("action: receive_bet | result: fail | field: client_id | error: failed to receive data")
             return None
-        client_id = struct.unpack('!I', client_id_bytes)[0]
+        client_id = unpack_uint32_be(client_id_bytes)
         
         # Nombre length (4 bytes)
         nombre_len_bytes = recv_all(client_sock, 4)
         if not nombre_len_bytes:
             logging.error("action: receive_bet | result: fail | field: nombre_length | error: failed to receive data")
             return None
-        nombre_len = struct.unpack('!I', nombre_len_bytes)[0]
+        nombre_len = unpack_uint32_be(nombre_len_bytes)
 
         # Nombre
         nombre_bytes = recv_all(client_sock, nombre_len)
@@ -49,7 +53,7 @@ def receive_bet(client_sock) -> Optional[Tuple[str, str, str, str, str, str]]:
         if not apellido_len_bytes:
             logging.error("action: receive_bet | result: fail | field: apellido_length | error: failed to receive data")
             return None
-        apellido_len = struct.unpack('!I', apellido_len_bytes)[0]
+        apellido_len = unpack_uint32_be(apellido_len_bytes)
 
         # Apellido
         apellido_bytes = recv_all(client_sock, apellido_len)
@@ -63,14 +67,14 @@ def receive_bet(client_sock) -> Optional[Tuple[str, str, str, str, str, str]]:
         if not documento_bytes:
             logging.error("action: receive_bet | result: fail | field: documento | error: failed to receive data")
             return None
-        documento = struct.unpack('!I', documento_bytes)[0]
+        documento = unpack_uint32_be(documento_bytes)
 
         # Nacimiento (4 bytes)
         nacimiento_bytes = recv_all(client_sock, 4)
         if not nacimiento_bytes:
             logging.error("action: receive_bet | result: fail | field: nacimiento | error: failed to receive data")
             return None
-        nacimiento_int = struct.unpack('!I', nacimiento_bytes)[0]
+        nacimiento_int = unpack_uint32_be(nacimiento_bytes)
 
         year = nacimiento_int // 10000
         month = (nacimiento_int % 10000) // 100
@@ -82,13 +86,13 @@ def receive_bet(client_sock) -> Optional[Tuple[str, str, str, str, str, str]]:
         if not numero_bytes:
             logging.error("action: receive_bet | result: fail | field: numero | error: failed to receive data")
             return None
-        numero = struct.unpack('!I', numero_bytes)[0]
+        numero = unpack_uint32_be(numero_bytes)
 
         logging.debug(f"action: receive_bet | result: success | client_id: {client_id} | dni: {documento}")
         return (str(client_id), nombre, apellido, str(documento), nacimiento, str(numero))
 
-    except struct.error as e:
-        logging.error(f"action: receive_bet | result: fail | error: struct unpacking failed - {e}")
+    except ValueError as e:
+        logging.error(f"action: receive_bet | result: fail | error: data unpacking failed - {e}")
         return None
     except UnicodeDecodeError as e:
         logging.error(f"action: receive_bet | result: fail | error: unicode decode failed - {e}")
