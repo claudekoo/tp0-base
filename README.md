@@ -315,3 +315,37 @@ make docker-compose-up
 make docker-compose-logs
 ```
 
+### Ejercicio 6
+
+#### Modificaciones del Protocolo
+
+Se extendió el protocolo binario para soportar batches de apuestas:
+
+**Mensaje de Batch (Cliente a Servidor):**
+```
+| Campo         | Tipo      | Tamaño    | Descripción                    |
+|---------------|-----------|-----------|--------------------------------|
+| client_id     | uint32    | 4 bytes   | ID del cliente (big endian)    |
+| num_apuestas  | uint32    | 4 bytes   | Cantidad de apuestas en batch  |
+| apuestas      | apuesta[] | variable  | Array de apuestas              |
+```
+
+Donde el tipo apuesta hace referencia a la estructura de datos que representa una única apuesta. Cada apuesta dentro del batch mantiene la misma estructura del ejercicio 5 pero sin client_id.
+
+#### Batch: maxAmount
+
+El valor del batch: maxAmount fue configurado tras un análisis de los archivos .csv proporcionados por la cátedra; se verificó que la combinación de Nombre y Apellido más larga era "Milagros De Los Angeles" + "Valenzuela", lo que resultaría en 33 bytes, constituyendo una apuesta de longitud total 53 bytes (sumado a los 20 bytes fijos). Dado esto, para que no exceda el tamaño máximo de 8kB, se estableció un límite conservador de 150 apuestas por batch: $8+53*150=7958$. Para evitar cargar en memoria todo el archivo, se declara una variable `currentBatch` que se vacía después de enviar cada batch.
+
+Para poder acceder a los mencionados archivos .csv, se agregó un volume en el archivo `docker-compose-dev.yaml`.
+
+#### Ejecución
+
+Para comprobar el funcionamiento del sistema y el procesamiento de batches:
+
+```bash
+./generar-compose.sh docker-compose-dev.yaml 5
+
+make docker-compose-up
+
+make docker-compose-logs
+```

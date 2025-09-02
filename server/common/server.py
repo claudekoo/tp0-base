@@ -3,7 +3,7 @@ import logging
 import signal
 import sys
 from .utils import Bet, store_bets
-from .protocol import receive_bet, send_response
+from .protocol import receive_bet_batch, send_response
 
 
 class Server:
@@ -52,21 +52,36 @@ class Server:
 
     def __handle_client_connection(self, client_sock):
         """
-        Read bet data from client and store it using protocol functions
+        Read batch bet data from client and store it
         """
         try:
-            bet_data = receive_bet(client_sock)
-            if bet_data is None:
+            batch_data = receive_bet_batch(client_sock)
+            if batch_data is not None:
+                client_id, bets_data = batch_data
+                cantidad = len(bets_data)
+                
+                try:
+                    bets = []
+                    for bet_data in bets_data:
+                        nombre, apellido, documento, nacimiento, numero = bet_data
+                        bet = Bet(client_id, nombre, apellido, documento, nacimiento, numero)
+                        bets.append(bet)
+                    
+                    store_bets(bets)
+                    
+                    logging.info(f'action: apuesta_recibida | result: success | cantidad: {cantidad}')
+                    
+                    send_response(client_sock, True)
+                    return
+                    
+                except Exception as batch_error:
+                    logging.info(f'action: apuesta_recibida | result: fail | cantidad: {cantidad}')
+                    send_response(client_sock, False)
+                    return
+            else:
+                # No batch data
                 send_response(client_sock, False)
                 return
-
-            client_id, nombre, apellido, documento, nacimiento, numero = bet_data
-            
-            bet = Bet(client_id, nombre, apellido, documento, nacimiento, numero)
-            store_bets([bet])
-
-            logging.info(f'action: apuesta_almacenada | result: success | dni: {documento} | numero: {numero}')
-            send_response(client_sock, True)
 
         except Exception as e:
             logging.error(f"action: receive_message | result: fail | error: {e}")

@@ -26,31 +26,58 @@ type BetData struct {
 	Numero     string
 }
 
-// Protocol: client_id(4), nombre_len(4), nombre, apellido_len(4), apellido, documento(4), nacimiento(4), numero(4)
-func SendBet(conn net.Conn, bet BetData) error {
+type BatchData struct {
+	ClientID string
+	Bets     []BetData
+}
+
+// Protocol: client_id(4), batch_size(4), [bet1, bet2, ...]
+// Where each bet: nombre_len(4), nombre, apellido_len(4), apellido, documento(4), nacimiento(4), numero(4)
+func SendBetBatch(conn net.Conn, batch BatchData) error {
 	// Client ID (4 bytes)
-	clientID, err := strconv.ParseUint(bet.ClientID, 10, 32)
+	clientID, err := strconv.ParseUint(batch.ClientID, 10, 32)
 	if err != nil {
-		protocolLog.Errorf("action: send_bet | result: fail | field: client_id | error: %v", err)
+		protocolLog.Errorf("action: send_bet_batch | result: fail | field: client_id | error: %v", err)
 		return fmt.Errorf("invalid client ID: %v", err)
 	}
 	err = binary.Write(conn, binary.BigEndian, uint32(clientID))
 	if err != nil {
-		protocolLog.Errorf("action: send_bet | result: fail | field: client_id | error: %v", err)
+		protocolLog.Errorf("action: send_bet_batch | result: fail | field: client_id | error: %v", err)
 		return err
 	}
-	
+
+	// Batch size (4 bytes)
+	batchSize := uint32(len(batch.Bets))
+	err = binary.Write(conn, binary.BigEndian, batchSize)
+	if err != nil {
+		protocolLog.Errorf("action: send_bet_batch | result: fail | field: batch_size | error: %v", err)
+		return err
+	}
+
+	for i, bet := range batch.Bets {
+		err := sendSingleBet(conn, bet)
+		if err != nil {
+			protocolLog.Errorf("action: send_bet_batch | result: fail | bet_index: %d | error: %v", i, err)
+			return fmt.Errorf("failed to send bet %d: %v", i, err)
+		}
+	}
+
+	protocolLog.Debugf("action: send_bet_batch | result: success | client_id: %s | batch_size: %d", batch.ClientID, batchSize)
+	return nil
+}
+
+func sendSingleBet(conn net.Conn, bet BetData) error {
 	// Nombre length (4 bytes) and Nombre
 	nameBytes := []byte(bet.Nombre)
 	nameLen := uint32(len(nameBytes))
-	err = binary.Write(conn, binary.BigEndian, nameLen)
+	err := binary.Write(conn, binary.BigEndian, nameLen)
 	if err != nil {
-		protocolLog.Errorf("action: send_bet | result: fail | field: nombre_length | error: %v", err)
+		protocolLog.Errorf("action: send_single_bet | result: fail | field: nombre_length | error: %v", err)
 		return err
 	}
 	_, err = conn.Write(nameBytes)
 	if err != nil {
-		protocolLog.Errorf("action: send_bet | result: fail | field: nombre | error: %v", err)
+		protocolLog.Errorf("action: send_single_bet | result: fail | field: nombre | error: %v", err)
 		return err
 	}
 
@@ -59,24 +86,24 @@ func SendBet(conn net.Conn, bet BetData) error {
 	surnameLen := uint32(len(surnameBytes))
 	err = binary.Write(conn, binary.BigEndian, surnameLen)
 	if err != nil {
-		protocolLog.Errorf("action: send_bet | result: fail | field: apellido_length | error: %v", err)
+		protocolLog.Errorf("action: send_single_bet | result: fail | field: apellido_length | error: %v", err)
 		return err
 	}
 	_, err = conn.Write(surnameBytes)
 	if err != nil {
-		protocolLog.Errorf("action: send_bet | result: fail | field: apellido | error: %v", err)
+		protocolLog.Errorf("action: send_single_bet | result: fail | field: apellido | error: %v", err)
 		return err
 	}
 
 	// Documento (4 bytes)
 	documento, err := strconv.ParseUint(bet.Documento, 10, 32)
 	if err != nil {
-		protocolLog.Errorf("action: send_bet | result: fail | field: documento | error: %v", err)
+		protocolLog.Errorf("action: send_single_bet | result: fail | field: documento | error: %v", err)
 		return fmt.Errorf("invalid documento: %v", err)
 	}
 	err = binary.Write(conn, binary.BigEndian, uint32(documento))
 	if err != nil {
-		protocolLog.Errorf("action: send_bet | result: fail | field: documento | error: %v", err)
+		protocolLog.Errorf("action: send_single_bet | result: fail | field: documento | error: %v", err)
 		return err
 	}
 
@@ -85,44 +112,43 @@ func SendBet(conn net.Conn, bet BetData) error {
 	dateParts := strings.Split(bet.Nacimiento, "-")
 	if len(dateParts) != 3 {
 		err := fmt.Errorf("invalid date format: %s", bet.Nacimiento)
-		protocolLog.Errorf("action: send_bet | result: fail | field: nacimiento | error: %v", err)
+		protocolLog.Errorf("action: send_single_bet | result: fail | field: nacimiento | error: %v", err)
 		return err
 	}
 	year, err := strconv.Atoi(dateParts[0])
 	if err != nil {
-		protocolLog.Errorf("action: send_bet | result: fail | field: nacimiento_year | error: %v", err)
+		protocolLog.Errorf("action: send_single_bet | result: fail | field: nacimiento_year | error: %v", err)
 		return fmt.Errorf("invalid year: %v", err)
 	}
 	month, err := strconv.Atoi(dateParts[1])
 	if err != nil {
-		protocolLog.Errorf("action: send_bet | result: fail | field: nacimiento_month | error: %v", err)
+		protocolLog.Errorf("action: send_single_bet | result: fail | field: nacimiento_month | error: %v", err)
 		return fmt.Errorf("invalid month: %v", err)
 	}
 	day, err := strconv.Atoi(dateParts[2])
 	if err != nil {
-		protocolLog.Errorf("action: send_bet | result: fail | field: nacimiento_day | error: %v", err)
+		protocolLog.Errorf("action: send_single_bet | result: fail | field: nacimiento_day | error: %v", err)
 		return fmt.Errorf("invalid day: %v", err)
 	}
 	dateInt := uint32(year*10000 + month*100 + day)
 	err = binary.Write(conn, binary.BigEndian, dateInt)
 	if err != nil {
-		protocolLog.Errorf("action: send_bet | result: fail | field: nacimiento | error: %v", err)
+		protocolLog.Errorf("action: send_single_bet | result: fail | field: nacimiento | error: %v", err)
 		return err
 	}
 
 	// Numero (4 bytes)
 	numero, err := strconv.ParseUint(bet.Numero, 10, 32)
 	if err != nil {
-		protocolLog.Errorf("action: send_bet | result: fail | field: numero | error: %v", err)
+		protocolLog.Errorf("action: send_single_bet | result: fail | field: numero | error: %v", err)
 		return fmt.Errorf("invalid numero: %v", err)
 	}
 	err = binary.Write(conn, binary.BigEndian, uint32(numero))
 	if err != nil {
-		protocolLog.Errorf("action: send_bet | result: fail | field: numero | error: %v", err)
+		protocolLog.Errorf("action: send_single_bet | result: fail | field: numero | error: %v", err)
 		return err
 	}
 
-	protocolLog.Debugf("action: send_bet | result: success | client_id: %s | dni: %s", bet.ClientID, bet.Documento)
 	return nil
 }
 

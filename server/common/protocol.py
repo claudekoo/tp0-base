@@ -1,9 +1,14 @@
-import struct
 import logging
 from typing import Optional, Tuple
 
 RESPONSE_OK = 0
 RESPONSE_ERROR = 1
+
+def unpack_uint32_be(data: bytes) -> int:
+    """Helper function to unpack a 4-byte big-endian unsigned integer from bytes"""
+    if len(data) != 4:
+        raise ValueError(f"Expected 4 bytes, got {len(data)}")
+    return (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3]
 
 def recv_all(sock, n):
     """Helper function to receive exactly n bytes"""
@@ -16,26 +21,62 @@ def recv_all(sock, n):
         data += packet
     return data
 
-def receive_bet(client_sock) -> Optional[Tuple[str, str, str, str, str, str]]:
+def receive_bet_batch(client_sock) -> Optional[Tuple[str, list]]:
     """
-    Receive bet data from client socket
+    Receive a batch of bets from client socket
     
-    Protocol: client_id(4), nombre_len(4), nombre, apellido_len(4), apellido, documento(4), nacimiento(4), numero(4)
+    Protocol: client_id(4), batch_size(4), then batch_size number of bets
+    Where each bet: nombre_len(4), nombre, apellido_len(4), apellido, documento(4), nacimiento(4), numero(4)
     """
     try:
-        # Client ID (4 bytes)
         client_id_bytes = recv_all(client_sock, 4)
         if not client_id_bytes:
-            logging.error("action: receive_bet | result: fail | field: client_id | error: failed to receive data")
+            logging.error("action: receive_bet_batch | result: fail | field: client_id | error: failed to receive data")
             return None
-        client_id = struct.unpack('!I', client_id_bytes)[0]
+        client_id = str(unpack_uint32_be(client_id_bytes))
         
+        batch_size_bytes = recv_all(client_sock, 4)
+        if not batch_size_bytes:
+            logging.error("action: receive_bet_batch | result: fail | field: batch_size | error: failed to receive data")
+            return None
+        
+        batch_size = unpack_uint32_be(batch_size_bytes)
+        logging.debug(f"action: receive_bet_batch | result: in_progress | client_id: {client_id} | batch_size: {batch_size}")
+        
+        if batch_size == 0:
+            logging.info(f"action: receive_bet_batch | result: success | client_id: {client_id} | batch_size: 0")
+            return (client_id, [])
+        
+        bets_data = []
+        
+        for i in range(batch_size):
+            bet_result = receive_bet(client_sock)
+            if bet_result is None:
+                logging.error(f"action: receive_bet_batch | result: fail | bet_number: {i+1} | error: failed to receive bet")
+                return None
+            
+            bets_data.append(bet_result)
+        
+        logging.info(f"action: receive_bet_batch | result: success | client_id: {client_id} | batch_size: {batch_size}")
+        return (client_id, bets_data)
+        
+    except Exception as e:
+        logging.error(f"action: receive_bet_batch | result: fail | error: {e}")
+        return None
+
+def receive_bet(client_sock) -> Optional[Tuple[str, str, str, str, str]]:
+    """
+    Receive a bet data from client socket
+    
+    Protocol: nombre_len(4), nombre, apellido_len(4), apellido, documento(4), nacimiento(4), numero(4)
+    """
+    try:
         # Nombre length (4 bytes)
         nombre_len_bytes = recv_all(client_sock, 4)
         if not nombre_len_bytes:
             logging.error("action: receive_bet | result: fail | field: nombre_length | error: failed to receive data")
             return None
-        nombre_len = struct.unpack('!I', nombre_len_bytes)[0]
+        nombre_len = unpack_uint32_be(nombre_len_bytes)
 
         # Nombre
         nombre_bytes = recv_all(client_sock, nombre_len)
@@ -49,7 +90,7 @@ def receive_bet(client_sock) -> Optional[Tuple[str, str, str, str, str, str]]:
         if not apellido_len_bytes:
             logging.error("action: receive_bet | result: fail | field: apellido_length | error: failed to receive data")
             return None
-        apellido_len = struct.unpack('!I', apellido_len_bytes)[0]
+        apellido_len = unpack_uint32_be(apellido_len_bytes)
 
         # Apellido
         apellido_bytes = recv_all(client_sock, apellido_len)
@@ -63,14 +104,14 @@ def receive_bet(client_sock) -> Optional[Tuple[str, str, str, str, str, str]]:
         if not documento_bytes:
             logging.error("action: receive_bet | result: fail | field: documento | error: failed to receive data")
             return None
-        documento = struct.unpack('!I', documento_bytes)[0]
+        documento = unpack_uint32_be(documento_bytes)
 
         # Nacimiento (4 bytes)
         nacimiento_bytes = recv_all(client_sock, 4)
         if not nacimiento_bytes:
             logging.error("action: receive_bet | result: fail | field: nacimiento | error: failed to receive data")
             return None
-        nacimiento_int = struct.unpack('!I', nacimiento_bytes)[0]
+        nacimiento_int = unpack_uint32_be(nacimiento_bytes)
 
         year = nacimiento_int // 10000
         month = (nacimiento_int % 10000) // 100
@@ -82,13 +123,12 @@ def receive_bet(client_sock) -> Optional[Tuple[str, str, str, str, str, str]]:
         if not numero_bytes:
             logging.error("action: receive_bet | result: fail | field: numero | error: failed to receive data")
             return None
-        numero = struct.unpack('!I', numero_bytes)[0]
+        numero = unpack_uint32_be(numero_bytes)
 
-        logging.debug(f"action: receive_bet | result: success | client_id: {client_id} | dni: {documento}")
-        return (str(client_id), nombre, apellido, str(documento), nacimiento, str(numero))
+        return (nombre, apellido, str(documento), nacimiento, str(numero))
 
-    except struct.error as e:
-        logging.error(f"action: receive_bet | result: fail | error: struct unpacking failed - {e}")
+    except ValueError as e:
+        logging.error(f"action: receive_bet | result: fail | error: unpacking failed - {e}")
         return None
     except UnicodeDecodeError as e:
         logging.error(f"action: receive_bet | result: fail | error: unicode decode failed - {e}")
