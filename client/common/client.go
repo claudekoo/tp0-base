@@ -77,6 +77,10 @@ func (c *Client) processBatchesFromCSV(csvFile string) {
 		log.Errorf("action: read_csv_streaming | result: fail | client_id: %v | error: %v", c.config.ID, err)
 		return
 	}
+	
+	c.sendFinishedNotification()
+	
+	c.queryWinners()
 }
 
 func (c *Client) processBetsFromCSVAsBatchesAndSend(filename string) error {
@@ -185,5 +189,64 @@ func (c *Client) closeConnection() {
 		log.Infof("action: close_connection | result: success | client_id: %v", c.config.ID)
 		c.conn.Close()
 		c.conn = nil
+	}
+}
+
+func (c *Client) sendFinishedNotification() {
+	err := c.createClientSocket()
+	if err != nil || c.shutdown {
+		return
+	}
+	defer c.closeConnection()
+
+	err = SendFinishedNotification(c.conn, c.config.ID)
+	if err != nil {
+		log.Errorf("action: send_finished_notification | result: fail | client_id: %v | error: %v", c.config.ID, err)
+		return
+	}
+
+	success, err := ReceiveResponse(c.conn)
+	if err != nil {
+		log.Errorf("action: receive_finished_response | result: fail | client_id: %v | error: %v", c.config.ID, err)
+		return
+	}
+
+	if success {
+		log.Infof("action: finished_notification_sent | result: success | client_id: %v", c.config.ID)
+	} else {
+		log.Errorf("action: finished_notification_sent | result: fail | client_id: %v | response: ERROR", c.config.ID)
+	}
+}
+
+func (c *Client) queryWinners() {
+	const retryDelay = 1 * time.Second
+	
+	attempt := 1
+	for !c.shutdown {
+		err := c.createClientSocket()
+		if err != nil {
+			return
+		}
+
+		err = SendQueryWinners(c.conn, c.config.ID)
+		if err != nil {
+			log.Errorf("action: send_query_winners | result: fail | client_id: %v | attempt: %d | error: %v", c.config.ID, attempt, err)
+			c.closeConnection()
+			return
+		}
+
+		winners, err := ReceiveWinners(c.conn)
+		if err != nil {
+			log.Debugf("action: receive_winners | result: fail | client_id: %v | attempt: %d | error: %v", c.config.ID, attempt, err)
+			c.closeConnection()
+			
+			time.Sleep(retryDelay)
+			attempt++
+			continue
+		}
+
+		c.closeConnection()
+		log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %d", len(winners))
+		return
 	}
 }

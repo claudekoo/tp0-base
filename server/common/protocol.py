@@ -4,6 +4,10 @@ from typing import Optional, Tuple
 RESPONSE_OK = 0
 RESPONSE_ERROR = 1
 
+MESSAGE_TYPE_BATCH = 1
+MESSAGE_TYPE_FINISHED_SENDING = 2
+MESSAGE_TYPE_QUERY_WINNERS = 3
+
 def unpack_uint32_be(data: bytes) -> int:
     """Helper function to unpack a 4-byte big-endian unsigned integer from bytes"""
     if len(data) != 4:
@@ -145,3 +149,70 @@ def send_response(client_sock, success: bool) -> None:
         logging.debug(f"action: send_response | result: success | response_code: {response_code}")
     except Exception as e:
         logging.error(f"action: send_response | result: fail | response_code: {response_code} | error: {e}")
+
+def receive_message_type(client_sock) -> Optional[int]:
+    """Receive message type (4 bytes)"""
+    try:
+        msg_type_bytes = recv_all(client_sock, 4)
+        if not msg_type_bytes:
+            logging.error("action: receive_message_type | result: fail | error: failed to receive data")
+            return None
+        msg_type = unpack_uint32_be(msg_type_bytes)
+        logging.debug(f"action: receive_message_type | result: success | message_type: {msg_type}")
+        return msg_type
+    except Exception as e:
+        logging.error(f"action: receive_message_type | result: fail | error: {e}")
+        return None
+
+def receive_finished_notification(client_sock) -> Optional[str]:
+    """Receive finished notification message"""
+    try:
+        client_id_bytes = recv_all(client_sock, 4)
+        if not client_id_bytes:
+            logging.error("action: receive_finished_notification | result: fail | field: client_id | error: failed to receive data")
+            return None
+        client_id = str(unpack_uint32_be(client_id_bytes))
+        
+        logging.debug(f"action: receive_finished_notification | result: success | client_id: {client_id}")
+        return client_id
+    except Exception as e:
+        logging.error(f"action: receive_finished_notification | result: fail | error: {e}")
+        return None
+
+def receive_query_winners(client_sock) -> Optional[str]:
+    """Receive query winners message"""
+    try:
+        client_id_bytes = recv_all(client_sock, 4)
+        if not client_id_bytes:
+            logging.error("action: receive_query_winners | result: fail | field: client_id | error: failed to receive data")
+            return None
+        client_id = str(unpack_uint32_be(client_id_bytes))
+        
+        logging.debug(f"action: receive_query_winners | result: success | client_id: {client_id}")
+        return client_id
+    except Exception as e:
+        logging.error(f"action: receive_query_winners | result: fail | error: {e}")
+        return None
+
+def pack_uint32_be(value: int) -> bytes:
+    """Pack a 4-byte big-endian unsigned integer to bytes"""
+    return bytes([(value >> 24) & 0xFF, (value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF])
+
+def send_winners(client_sock, winners: list[str]) -> None:
+    try:
+        client_sock.send(bytes([RESPONSE_OK]))
+        
+        winners_count = len(winners)
+        client_sock.send(pack_uint32_be(winners_count))
+        
+        for winner_documento in winners:
+            documento_int = int(winner_documento)
+            client_sock.send(pack_uint32_be(documento_int))
+        
+        logging.debug(f"action: send_winners | result: success | winners_count: {winners_count}")
+    except Exception as e:
+        logging.error(f"action: send_winners | result: fail | error: {e}")
+        try:
+            client_sock.send(bytes([RESPONSE_ERROR]))
+        except:
+            pass

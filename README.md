@@ -282,7 +282,7 @@ Para evitar short reads/writes, se implementó un protocolo binario que permite 
 ```
 | Campo     | Tipo   | Tamaño  | Descripción                |
 |-----------|--------|---------|----------------------------|
-| response  | uint8  | 1 byte  | 0=OK, 1=ERROR             |
+| response  | uint8  | 1 byte  | 0=OK, 1=ERROR              |
 ```
 
 Para separar la capa de dominio y la capa de comunicación, todo lo relacionado al protocolo se encuentra en archivos `protocol.go` y `protocol.py`.
@@ -341,6 +341,70 @@ Para poder acceder a los mencionados archivos .csv, se agregó un volume en el a
 #### Ejecución
 
 Para comprobar el funcionamiento del sistema y el procesamiento de batches:
+
+```bash
+./generar-compose.sh docker-compose-dev.yaml 5
+
+make docker-compose-up
+
+make docker-compose-logs
+```
+
+### Ejercicio 7
+
+#### Modificaciones del Protocolo
+
+Se extendió el protocolo para soportar diferentes tipos de mensajes mediante la inclusión de un campo `message_type` al inicio de cada mensaje:
+
+**Tipos de Mensajes:**
+- `MessageTypeBatch = 1`: Envío de lote de apuestas
+- `MessageTypeFinishedSending = 2`: Notificación de fin de envío de apuestas  
+- `MessageTypeQueryWinners = 3`: Consulta de ganadores
+
+**Mensaje de Notificación de Fin (Cliente a Servidor):**
+```
+| Campo        | Tipo      | Tamaño    | Descripción                    |
+|--------------|-----------|-----------|--------------------------------|
+| message_type | uint32    | 4 bytes   | Tipo de mensaje (2)            |
+| client_id    | uint32    | 4 bytes   | ID del cliente (big endian)    |
+```
+
+**Mensaje de Consulta de Ganadores (Cliente a Servidor):**
+```
+| Campo        | Tipo      | Tamaño    | Descripción                    |
+|--------------|-----------|-----------|--------------------------------|
+| message_type | uint32    | 4 bytes   | Tipo de mensaje (3)            |
+| client_id    | uint32    | 4 bytes   | ID del cliente (big endian)    |
+```
+
+**Respuesta de Ganadores (Servidor a Cliente):**
+```
+| Campo         | Tipo      | Tamaño    | Descripción                    |
+|---------------|-----------|-----------|--------------------------------|
+| response      | uint8     | 1 byte    | 0=OK, 1=ERROR                  |
+| num_ganadores | uint32    | 4 bytes   | Cantidad de ganadores          |
+| ganadores     | uint32[]  | variable  | Array de DNIs ganadores        |
+```
+
+#### Flujo del Sistema
+
+1. **Envío de Apuestas**: Los clientes procesan y envían todas las apuestas por batches
+2. **Notificación de Fin**: Cada cliente envía una notificación cuando termina de enviar todas sus apuestas
+3. **Sorteo**: El servidor espera las notificaciones de las 5 agencias y luego realiza el sorteo
+4. **Consulta de Ganadores**: Los clientes consultan inmediatamente por sus ganadores específicos, y en caso de obtener error(que indica sorteo no realizado), esperan 1 segundo y reintentan
+5. **Respuesta de Ganadores**: El servidor responde con los DNIs ganadores de cada agencia
+
+El servidor mantiene:
+- `_finished_agencies`: Set que registra las agencias que terminaron de enviar apuestas
+- `_lottery_done`: Flag que indica si el sorteo ya fue realizado
+
+Cuando todas las agencias del sistema notifican que terminaron, el servidor logea: `action: sorteo | result: success`.
+
+Las consultas de ganadores antes del sorteo son rechazadas con error, y los clientes reintentan cada segundo para obtener los resultados.
+
+#### Ejecución
+
+Para probar el flujo completo del sorteo:
 
 ```bash
 ./generar-compose.sh docker-compose-dev.yaml 5

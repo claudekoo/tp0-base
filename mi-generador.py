@@ -28,7 +28,11 @@ def generate_compose_file(output_filename: str, num_clients: int):
                 client_lines.append(line)
                 continue
         if section == SERVER:
-            server_lines.append(line)
+            if "environment:" in line:
+                server_lines.append(line)
+                server_lines.append(f"      - NUM_AGENCIES={num_clients}\n")
+            else:
+                server_lines.append(line)
         if section == NETWORKS:
             networks_lines.append(line)
     
