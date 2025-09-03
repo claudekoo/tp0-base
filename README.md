@@ -413,3 +413,36 @@ make docker-compose-up
 
 make docker-compose-logs
 ```
+
+### Ejercicio 8
+
+Se modificó el servidor para manejar conexiones y procesar mensajes en paralelo utilizando multithreading; el servidor principal acepta conexiones en un loop continuo, y cada nueva conexión cliente se maneja en un thread separado. A pesar de las limitaciones del GIL de Python, esto sigue siendo beneficioso al tratarse de operaciones I/O.
+
+#### Mecanismos de Sincronización
+
+Dado que las funciones `store_bets()` y `load_bets()` no son thread-safe, se implementaron tres locks principales:
+
+1. **`_storage_lock`**: Protege las operaciones de almacenamiento (`store_bets` y `load_bets`)
+   - Utilizado en `__handle_bet_batch()` para escritura segura de apuestas
+   - Utilizado in `__get_winners_for_agency()` para lectura segura de apuestas
+
+2. **`_finished_agencies_lock`**: Protege el set de agencias que terminaron
+   - Evita condiciones de carrera al agregar agencias al set
+   - Garantiza consistencia al verificar el conteo de agencias terminadas
+
+3. **`_lottery_lock`**: Protege las operaciones relacionadas con el estado del sorteo
+   - Asegura que solo un thread pueda marcar el sorteo como realizado
+   - Protege las consultas del estado `_lottery_done`
+
+#### Ejecución
+
+Para probar la funcionalidad con concurrencia:
+
+```bash
+./generar-compose.sh docker-compose-dev.yaml 5
+
+make docker-compose-up
+
+make docker-compose-logs
+```
+

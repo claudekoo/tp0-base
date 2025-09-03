@@ -20,7 +20,6 @@ def recv_all(sock, n):
     while len(data) < n:
         packet = sock.recv(n - len(data))
         if not packet:
-            logging.error(f"action: recv_all | result: fail | expected_bytes: {n} | received_bytes: {len(data)} | error: connection closed")
             return None
         data += packet
     return data
@@ -155,7 +154,6 @@ def receive_message_type(client_sock) -> Optional[int]:
     try:
         msg_type_bytes = recv_all(client_sock, 4)
         if not msg_type_bytes:
-            logging.error("action: receive_message_type | result: fail | error: failed to receive data")
             return None
         msg_type = unpack_uint32_be(msg_type_bytes)
         logging.debug(f"action: receive_message_type | result: success | message_type: {msg_type}")

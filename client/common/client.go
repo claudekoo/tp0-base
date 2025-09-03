@@ -63,6 +63,13 @@ func (c *Client) createClientSocket() error {
 
 // StartClientLoop Send bet data as batches to server using CSV data
 func (c *Client) StartClientLoop() {
+	err := c.createClientSocket()
+	if err != nil {
+		log.Errorf("action: create_persistent_connection | result: fail | client_id: %v | error: %v", c.config.ID, err)
+		return
+	}
+	defer c.closeConnection()
+
 	csvFile := fmt.Sprintf("/data/agency-%s.csv", c.config.ID)
 	if _, err := os.Stat(csvFile); err == nil {
 		c.processBatchesFromCSV(csvFile)
@@ -144,18 +151,16 @@ func (c *Client) processBetsFromCSVAsBatchesAndSend(filename string) error {
 }
 
 func (c *Client) sendBatch(bets []BetData) {
-	err := c.createClientSocket()
-	if err != nil || c.shutdown {
+	if c.conn == nil || c.shutdown {
 		return
 	}
-	defer c.closeConnection()
 
 	batch := BatchData{
 		ClientID: c.config.ID,
 		Bets:     bets,
 	}
 
-	err = SendBetBatch(c.conn, batch)
+	err := SendBetBatch(c.conn, batch)
 	if err != nil {
 		log.Errorf("action: send_bet_batch | result: fail | client_id: %v | batch_size: %d | error: %v", 
 			c.config.ID, len(bets), err)
@@ -193,13 +198,11 @@ func (c *Client) closeConnection() {
 }
 
 func (c *Client) sendFinishedNotification() {
-	err := c.createClientSocket()
-	if err != nil || c.shutdown {
+	if c.conn == nil || c.shutdown {
 		return
 	}
-	defer c.closeConnection()
 
-	err = SendFinishedNotification(c.conn, c.config.ID)
+	err := SendFinishedNotification(c.conn, c.config.ID)
 	if err != nil {
 		log.Errorf("action: send_finished_notification | result: fail | client_id: %v | error: %v", c.config.ID, err)
 		return
@@ -223,29 +226,25 @@ func (c *Client) queryWinners() {
 	
 	attempt := 1
 	for !c.shutdown {
-		err := c.createClientSocket()
-		if err != nil {
+		if c.conn == nil {
 			return
 		}
 
-		err = SendQueryWinners(c.conn, c.config.ID)
+		err := SendQueryWinners(c.conn, c.config.ID)
 		if err != nil {
 			log.Errorf("action: send_query_winners | result: fail | client_id: %v | attempt: %d | error: %v", c.config.ID, attempt, err)
-			c.closeConnection()
 			return
 		}
 
 		winners, err := ReceiveWinners(c.conn)
 		if err != nil {
 			log.Debugf("action: receive_winners | result: fail | client_id: %v | attempt: %d | error: %v", c.config.ID, attempt, err)
-			c.closeConnection()
 			
 			time.Sleep(retryDelay)
 			attempt++
 			continue
 		}
 
-		c.closeConnection()
 		log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %d", len(winners))
 		return
 	}
