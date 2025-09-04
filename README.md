@@ -1,5 +1,33 @@
 # TP0: Docker + Comunicaciones + Concurrencia
 
+## Índice
+
+- [Instrucciones de uso](#instrucciones-de-uso)
+  - [Servidor](#servidor)
+  - [Cliente](#cliente)
+  - [Ejemplo](#ejemplo)
+- [Parte 1: Introducción a Docker](#parte-1-introduccion-a-docker)
+  - [Ejercicio N°1](#ejercicio-n1)
+  - [Ejercicio N°2](#ejercicio-n2)
+  - [Ejercicio N°3](#ejercicio-n3)
+  - [Ejercicio N°4](#ejercicio-n4)
+- [Parte 2: Repaso de Comunicaciones](#parte-2-repaso-de-comunicaciones)
+  - [Ejercicio N°5](#ejercicio-n5)
+  - [Ejercicio N°6](#ejercicio-n6)
+  - [Ejercicio N°7](#ejercicio-n7)
+- [Parte 3: Repaso de Concurrencia](#parte-3-repaso-de-concurrencia)
+  - [Ejercicio N°8](#ejercicio-n8)
+- [Condiciones de Entrega](#condiciones-de-entrega)
+- [Resolución de Ejercicios](#resolucion-de-ejercicios)
+  - [Ejercicio 1](#ejercicio-1)
+  - [Ejercicio 2](#ejercicio-2)
+  - [Ejercicio 3](#ejercicio-3)
+  - [Ejercicio 4](#ejercicio-4)
+  - [Ejercicio 5](#ejercicio-5)
+  - [Ejercicio 6](#ejercicio-6)
+  - [Ejercicio 7](#ejercicio-7)
+  - [Ejercicio 8](#ejercicio-8)
+
 En el presente repositorio se provee un esqueleto básico de cliente/servidor, en donde todas las dependencias del mismo se encuentran encapsuladas en containers. Los alumnos deberán resolver una guía de ejercicios incrementales, teniendo en cuenta las condiciones de entrega descritas al final de este enunciado.
 
  El cliente (Golang) y el servidor (Python) fueron desarrollados en diferentes lenguajes simplemente para mostrar cómo dos lenguajes de programación pueden convivir en el mismo proyecto con la ayuda de containers, en este caso utilizando [Docker Compose](https://docs.docker.com/compose/).
