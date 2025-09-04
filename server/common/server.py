@@ -21,9 +21,11 @@ class Server:
         self._num_agencies = num_agencies
         
         self._client_threads = []
+        self._client_sockets = []
         self._storage_lock = threading.Lock()
         self._finished_agencies_lock = threading.Lock()
         self._lottery_lock = threading.Lock()
+        self._client_sockets_lock = threading.Lock()
         
         signal.signal(signal.SIGTERM, self._signal_handler)
 
@@ -34,9 +36,13 @@ class Server:
             logging.info("action: close_server_socket | result: success")
             self._server_socket.close()
         
+        with self._client_sockets_lock:
+            for client_sock in self._client_sockets:
+                client_sock.close()
+
         for thread in self._client_threads:
             if thread.is_alive():
-                thread.join(timeout=5.0)
+                thread.join()
         
         logging.info("action: server_shutdown | result: success")
         sys.exit(0)
@@ -53,6 +59,9 @@ class Server:
             while self._running:
                 try:
                     client_sock = self.__accept_new_connection()
+                    with self._client_sockets_lock:
+                        self._client_sockets.append(client_sock)
+                    
                     client_thread = threading.Thread(
                         target=self.__handle_client_connection,
                         args=(client_sock,),
@@ -74,9 +83,13 @@ class Server:
                 logging.info("action: close_server_socket | result: success")
                 self._server_socket.close()
             
+            with self._client_sockets_lock:
+                for client_sock in self._client_sockets:
+                    client_sock.close()
+            
             for thread in self._client_threads:
                 if thread.is_alive():
-                    thread.join(timeout=5.0)
+                    thread.join()
 
     def __handle_client_connection(self, client_sock):
         """
@@ -107,6 +120,9 @@ class Server:
         finally:
             logging.info("action: close_client_socket | result: success")
             client_sock.close()
+            with self._client_sockets_lock:
+                if client_sock in self._client_sockets:
+                    self._client_sockets.remove(client_sock)
 
     def __handle_bet_batch(self, client_sock):
         """
