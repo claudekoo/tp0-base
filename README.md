@@ -307,11 +307,12 @@ Para evitar short reads/writes, se implementó un protocolo binario que envía p
 | numero       | uint32    | 4 bytes   | Número apostado                |
 ```
 
-**Respuesta (Servidor a Cliente):**
+**Respuesta Simple (Servidor a Cliente, modificado para Ejercicio 8):**
 ```
-| Campo     | Tipo   | Tamaño  | Descripción                |
-|-----------|--------|---------|----------------------------|
-| response  | uint8  | 1 byte  | 0=OK, 1=ERROR              |
+| Campo        | Tipo      | Tamaño    | Descripción                    |
+|--------------|-----------|-----------|--------------------------------|
+| message_len  | uint32    | 4 bytes   | Longitud total del mensaje (1) |
+| response     | uint8     | 1 byte    | 0=OK, 1=ERROR                  |
 ```
 
 Para separar la capa de dominio y la capa de comunicación, todo lo relacionado al protocolo se encuentra en archivos `protocol.go` y `protocol.py`.
@@ -413,6 +414,7 @@ Se extendió el protocolo para soportar diferentes tipos de mensajes mediante la
 ```
 | Campo         | Tipo      | Tamaño    | Descripción                    |
 |---------------|-----------|-----------|--------------------------------|
+| message_len   | uint32    | 4 bytes   | Longitud total del mensaje     |
 | response      | uint8     | 1 byte    | 0=OK, 1=ERROR                  |
 | num_ganadores | uint32    | 4 bytes   | Cantidad de ganadores          |
 | ganadores     | uint32[]  | variable  | Array de DNIs ganadores        |

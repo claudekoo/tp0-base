@@ -165,7 +165,10 @@ def parse_bet_from_data(message_data: bytes, offset: int) -> Tuple[Optional[Tupl
 def send_response(client_sock, success: bool) -> None:
     response_code = RESPONSE_OK if success else RESPONSE_ERROR
     try:
-        send_all(client_sock, bytes([response_code]))
+        message_length = 1
+        message = pack_uint32_be(message_length) + bytes([response_code])
+        
+        send_all(client_sock, message)
         logging.debug(f"action: send_response | result: success | response_code: {response_code}")
     except Exception as e:
         logging.error(f"action: send_response | result: fail | response_code: {response_code} | error: {e}")
@@ -244,19 +247,22 @@ def pack_uint32_be(value: int) -> bytes:
 
 def send_winners(client_sock, winners: list[str]) -> None:
     try:
-        send_all(client_sock, bytes([RESPONSE_OK]))
-        
+        message_length = 1 + 4 + (len(winners) * 4)
         winners_count = len(winners)
-        send_all(client_sock, pack_uint32_be(winners_count))
         
+        message = pack_uint32_be(message_length) + bytes([RESPONSE_OK])        
+        message += pack_uint32_be(winners_count)        
         for winner_documento in winners:
             documento_int = int(winner_documento)
-            send_all(client_sock, pack_uint32_be(documento_int))
+            message += pack_uint32_be(documento_int)
         
+        send_all(client_sock, message)
         logging.debug(f"action: send_winners | result: success | winners_count: {winners_count}")
     except Exception as e:
         logging.error(f"action: send_winners | result: fail | error: {e}")
         try:
-            send_all(client_sock, bytes([RESPONSE_ERROR]))
+            error_message_length = 1
+            error_message = pack_uint32_be(error_message_length) + bytes([RESPONSE_ERROR])
+            send_all(client_sock, error_message)
         except:
             pass

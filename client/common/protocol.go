@@ -102,141 +102,128 @@ func calculateBatchMessageSize(batch BatchData) int {
 // Protocol: total_message_length(4), client_id(4), batch_size(4), [bet1, bet2, ...]
 // Where each bet: nombre_len(4), nombre, apellido_len(4), apellido, documento(4), nacimiento(4), numero(4)
 func SendBetBatch(conn net.Conn, batch BatchData) error {
-	// Message type (4 bytes)
-	err := writeUint32BE(conn, uint32(MessageTypeBatch))
-	if err != nil {
-		protocolLog.Errorf("action: send_bet_batch | result: fail | field: message_type | error: %v", err)
-		return err
-	}
-
-	messageSize := calculateBatchMessageSize(batch)
-	
-	err = writeUint32BE(conn, uint32(messageSize))
-	if err != nil {
-		protocolLog.Errorf("action: send_bet_batch | result: fail | field: message_length | error: %v", err)
-		return err
-	}
-
 	// Client ID (4 bytes)
 	clientID, err := strconv.ParseUint(batch.ClientID, 10, 32)
 	if err != nil {
 		protocolLog.Errorf("action: send_bet_batch | result: fail | field: client_id | error: %v", err)
 		return fmt.Errorf("invalid client ID: %v", err)
 	}
-	err = writeUint32BE(conn, uint32(clientID))
-	if err != nil {
-		protocolLog.Errorf("action: send_bet_batch | result: fail | field: client_id | error: %v", err)
-		return err
-	}
 
-	// Batch size (4 bytes)
+	messageSize := calculateBatchMessageSize(batch)
 	batchSize := uint32(len(batch.Bets))
-	err = writeUint32BE(conn, batchSize)
-	if err != nil {
-		protocolLog.Errorf("action: send_bet_batch | result: fail | field: batch_size | error: %v", err)
-		return err
-	}
-
+	
+	var message []byte
+	
+	// Message type (4 bytes)
+	messageTypeBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(messageTypeBytes, uint32(MessageTypeBatch))
+	message = append(message, messageTypeBytes...)
+	
+	// Message length (4 bytes)
+	messageLengthBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(messageLengthBytes, uint32(messageSize))
+	message = append(message, messageLengthBytes...)
+	
+	// Client ID (4 bytes)
+	clientIDBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(clientIDBytes, uint32(clientID))
+	message = append(message, clientIDBytes...)
+	
+	// Batch size (4 bytes)
+	batchSizeBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(batchSizeBytes, batchSize)
+	message = append(message, batchSizeBytes...)
+	
 	for i, bet := range batch.Bets {
-		err := sendSingleBet(conn, bet)
+		betBytes, err := serializeBet(bet)
 		if err != nil {
 			protocolLog.Errorf("action: send_bet_batch | result: fail | bet_index: %d | error: %v", i, err)
-			return fmt.Errorf("failed to send bet %d: %v", i, err)
+			return fmt.Errorf("failed to serialize bet %d: %v", i, err)
 		}
+		message = append(message, betBytes...)
+	}
+
+	err = sendAll(conn, message)
+	if err != nil {
+		protocolLog.Errorf("action: send_bet_batch | result: fail | error: %v", err)
+		return err
 	}
 
 	protocolLog.Debugf("action: send_bet_batch | result: success | client_id: %s | batch_size: %d | message_size: %d", batch.ClientID, batchSize, messageSize)
 	return nil
 }
 
-func sendSingleBet(conn net.Conn, bet BetData) error {
+func serializeBet(bet BetData) ([]byte, error) {
+	var betBytes []byte
+	
 	// Nombre length (4 bytes) and Nombre
 	nameBytes := []byte(bet.Nombre)
 	nameLen := uint32(len(nameBytes))
-	err := writeUint32BE(conn, nameLen)
-	if err != nil {
-		protocolLog.Errorf("action: send_single_bet | result: fail | field: nombre_length | error: %v", err)
-		return err
-	}
-	err = sendAll(conn, nameBytes)
-	if err != nil {
-		protocolLog.Errorf("action: send_single_bet | result: fail | field: nombre | error: %v", err)
-		return err
-	}
+	nameLenBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(nameLenBytes, nameLen)
+	betBytes = append(betBytes, nameLenBytes...)
+	betBytes = append(betBytes, nameBytes...)
 
 	// Apellido length (4 bytes) and Apellido  
 	surnameBytes := []byte(bet.Apellido)
 	surnameLen := uint32(len(surnameBytes))
-	err = writeUint32BE(conn, surnameLen)
-	if err != nil {
-		protocolLog.Errorf("action: send_single_bet | result: fail | field: apellido_length | error: %v", err)
-		return err
-	}
-	err = sendAll(conn, surnameBytes)
-	if err != nil {
-		protocolLog.Errorf("action: send_single_bet | result: fail | field: apellido | error: %v", err)
-		return err
-	}
+	surnameLenBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(surnameLenBytes, surnameLen)
+	betBytes = append(betBytes, surnameLenBytes...)
+	betBytes = append(betBytes, surnameBytes...)
 
 	// Documento (4 bytes)
 	documento, err := strconv.ParseUint(bet.Documento, 10, 32)
 	if err != nil {
-		protocolLog.Errorf("action: send_single_bet | result: fail | field: documento | error: %v", err)
-		return fmt.Errorf("invalid documento: %v", err)
+		return nil, fmt.Errorf("invalid documento: %v", err)
 	}
-	err = writeUint32BE(conn, uint32(documento))
-	if err != nil {
-		protocolLog.Errorf("action: send_single_bet | result: fail | field: documento | error: %v", err)
-		return err
-	}
+	documentoBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(documentoBytes, uint32(documento))
+	betBytes = append(betBytes, documentoBytes...)
 
 	// Nacimiento (4 bytes: YYYYMMDD)
 	// Parse date string YYYY-MM-DD to integer YYYYMMDD
 	dateParts := strings.Split(bet.Nacimiento, "-")
 	if len(dateParts) != 3 {
-		err := fmt.Errorf("invalid date format: %s", bet.Nacimiento)
-		protocolLog.Errorf("action: send_single_bet | result: fail | field: nacimiento | error: %v", err)
-		return err
+		return nil, fmt.Errorf("invalid date format: %s", bet.Nacimiento)
 	}
 	year, err := strconv.Atoi(dateParts[0])
 	if err != nil {
-		protocolLog.Errorf("action: send_single_bet | result: fail | field: nacimiento_year | error: %v", err)
-		return fmt.Errorf("invalid year: %v", err)
+		return nil, fmt.Errorf("invalid year: %v", err)
 	}
 	month, err := strconv.Atoi(dateParts[1])
 	if err != nil {
-		protocolLog.Errorf("action: send_single_bet | result: fail | field: nacimiento_month | error: %v", err)
-		return fmt.Errorf("invalid month: %v", err)
+		return nil, fmt.Errorf("invalid month: %v", err)
 	}
 	day, err := strconv.Atoi(dateParts[2])
 	if err != nil {
-		protocolLog.Errorf("action: send_single_bet | result: fail | field: nacimiento_day | error: %v", err)
-		return fmt.Errorf("invalid day: %v", err)
+		return nil, fmt.Errorf("invalid day: %v", err)
 	}
 	dateInt := uint32(year*10000 + month*100 + day)
-	err = writeUint32BE(conn, dateInt)
-	if err != nil {
-		protocolLog.Errorf("action: send_single_bet | result: fail | field: nacimiento | error: %v", err)
-		return err
-	}
+	dateBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(dateBytes, dateInt)
+	betBytes = append(betBytes, dateBytes...)
 
 	// Numero (4 bytes)
 	numero, err := strconv.ParseUint(bet.Numero, 10, 32)
 	if err != nil {
-		protocolLog.Errorf("action: send_single_bet | result: fail | field: numero | error: %v", err)
-		return fmt.Errorf("invalid numero: %v", err)
+		return nil, fmt.Errorf("invalid numero: %v", err)
 	}
-	err = writeUint32BE(conn, uint32(numero))
-	if err != nil {
-		protocolLog.Errorf("action: send_single_bet | result: fail | field: numero | error: %v", err)
-		return err
-	}
+	numeroBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(numeroBytes, uint32(numero))
+	betBytes = append(betBytes, numeroBytes...)
 
-	return nil
+	return betBytes, nil
 }
 
 func ReceiveResponse(conn net.Conn) (bool, error) {
-	response, err := recvAll(conn, 1)
+	messageLength, err := readUint32BE(conn)
+	if err != nil {
+		protocolLog.Errorf("action: receive_response | result: fail | field: message_length | error: %v", err)
+		return false, err
+	}
+	
+	response, err := recvAll(conn, int(messageLength))
 	if err != nil {
 		protocolLog.Errorf("action: receive_response | result: fail | error: %v", err)
 		return false, err
@@ -248,30 +235,34 @@ func ReceiveResponse(conn net.Conn) (bool, error) {
 }
 
 func SendFinishedNotification(conn net.Conn, clientID string) error {
-	// Message type (4 bytes)
-	err := writeUint32BE(conn, uint32(MessageTypeFinishedSending))
-	if err != nil {
-		protocolLog.Errorf("action: send_finished_notification | result: fail | field: message_type | error: %v", err)
-		return err
-	}
-
-	// Message length (4 bytes)
-	messageLength := uint32(4)
-	err = writeUint32BE(conn, messageLength)
-	if err != nil {
-		protocolLog.Errorf("action: send_finished_notification | result: fail | field: message_length | error: %v", err)
-		return err
-	}
-
-	// Client ID (4 bytes)
 	clientIDInt, err := strconv.ParseUint(clientID, 10, 32)
 	if err != nil {
 		protocolLog.Errorf("action: send_finished_notification | result: fail | field: client_id | error: %v", err)
 		return fmt.Errorf("invalid client ID: %v", err)
 	}
-	err = writeUint32BE(conn, uint32(clientIDInt))
+
+	// Build entire message in memory
+	var message []byte
+	
+	// Message type (4 bytes)
+	messageTypeBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(messageTypeBytes, uint32(MessageTypeFinishedSending))
+	message = append(message, messageTypeBytes...)
+	
+	// Message length (4 bytes)
+	messageLength := uint32(4)
+	messageLengthBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(messageLengthBytes, messageLength)
+	message = append(message, messageLengthBytes...)
+	
+	// Client ID (4 bytes)
+	clientIDBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(clientIDBytes, uint32(clientIDInt))
+	message = append(message, clientIDBytes...)
+
+	err = sendAll(conn, message)
 	if err != nil {
-		protocolLog.Errorf("action: send_finished_notification | result: fail | field: client_id | error: %v", err)
+		protocolLog.Errorf("action: send_finished_notification | result: fail | error: %v", err)
 		return err
 	}
 
@@ -280,30 +271,33 @@ func SendFinishedNotification(conn net.Conn, clientID string) error {
 }
 
 func SendQueryWinners(conn net.Conn, clientID string) error {
-	// Message type (4 bytes)
-	err := writeUint32BE(conn, uint32(MessageTypeQueryWinners))
-	if err != nil {
-		protocolLog.Errorf("action: send_query_winners | result: fail | field: message_type | error: %v", err)
-		return err
-	}
-
-	// Message length (4 bytes)
-	messageLength := uint32(4)
-	err = writeUint32BE(conn, messageLength)
-	if err != nil {
-		protocolLog.Errorf("action: send_query_winners | result: fail | field: message_length | error: %v", err)
-		return err
-	}
-
 	// Client ID (4 bytes)
 	clientIDInt, err := strconv.ParseUint(clientID, 10, 32)
 	if err != nil {
 		protocolLog.Errorf("action: send_query_winners | result: fail | field: client_id | error: %v", err)
 		return fmt.Errorf("invalid client ID: %v", err)
 	}
-	err = writeUint32BE(conn, uint32(clientIDInt))
+	var message []byte
+	
+	// Message type (4 bytes)
+	messageTypeBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(messageTypeBytes, uint32(MessageTypeQueryWinners))
+	message = append(message, messageTypeBytes...)
+	
+	// Message length (4 bytes)
+	messageLength := uint32(4)
+	messageLengthBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(messageLengthBytes, messageLength)
+	message = append(message, messageLengthBytes...)
+	
+	// Client ID (4 bytes)
+	clientIDBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(clientIDBytes, uint32(clientIDInt))
+	message = append(message, clientIDBytes...)
+
+	err = sendAll(conn, message)
 	if err != nil {
-		protocolLog.Errorf("action: send_query_winners | result: fail | field: client_id | error: %v", err)
+		protocolLog.Errorf("action: send_query_winners | result: fail | error: %v", err)
 		return err
 	}
 
@@ -312,32 +306,40 @@ func SendQueryWinners(conn net.Conn, clientID string) error {
 }
 
 func ReceiveWinners(conn net.Conn) ([]string, error) {
-	// Response status (1 byte)
-	response, err := recvAll(conn, 1)
+	// Message length (4 bytes)
+	messageLength, err := readUint32BE(conn)
 	if err != nil {
+		protocolLog.Errorf("action: receive_winners | result: fail | field: message_length | error: %v", err)
 		return nil, err
 	}
 	
-	if response[0] != ResponseOK {
-		return nil, fmt.Errorf("server returned error response: %d", response[0])
+	messageData, err := recvAll(conn, int(messageLength))
+	if err != nil {
+		protocolLog.Errorf("action: receive_winners | result: fail | field: message_data | error: %v", err)
+		return nil, err
+	}
+	
+	if len(messageData) < 1 {
+		return nil, fmt.Errorf("message too short: %d bytes", len(messageData))
+	}
+	
+	if messageData[0] != ResponseOK {
+		return nil, fmt.Errorf("server returned error response: %d", messageData[0])
+	}
+	
+	if len(messageData) < 5 { // 1 byte response + 4 bytes count
+		return nil, fmt.Errorf("message too short for winners count: %d bytes", len(messageData))
 	}
 
-	// Number of winners (4 bytes)
-	winnersCount, err := readUint32BE(conn)
-	if err != nil {
-		protocolLog.Errorf("action: receive_winners | result: fail | field: winners_count | error: %v", err)
-		return nil, err
-	}
-	
-	winners := make([]string, winnersCount)
-	for i := uint32(0); i < winnersCount; i++ {
-		documento, err := readUint32BE(conn)
-		if err != nil {
-			protocolLog.Errorf("action: receive_winners | result: fail | field: documento | winner_index: %d | error: %v", i, err)
-			return nil, err
-		}
+	winnersCount := binary.BigEndian.Uint32(messageData[1:5])
 		
+	winners := make([]string, winnersCount)
+	offset := 5 // after response (1) + count (4)
+	
+	for i := uint32(0); i < winnersCount; i++ {
+		documento := binary.BigEndian.Uint32(messageData[offset : offset+4])
 		winners[i] = fmt.Sprintf("%08d", documento)
+		offset += 4
 	}
 
 	protocolLog.Debugf("action: receive_winners | result: success | winners_count: %d", winnersCount)
