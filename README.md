@@ -290,12 +290,13 @@ docker logs <container_id>
 
 #### Protocolo de Comunicación
 
-Para evitar short reads/writes, se implementó un protocolo binario que permite determinar el tamaño exacto de cada parte de los mensajes en caso de ser variables. Para minimizar la sobrecarga de datos, todos los datos que pueden ser pasados a números enteros se envían parseados como tales.
+Para evitar short reads/writes, se implementó un protocolo binario que envía primero la longitud total del mensaje para que el receptor pueda leer exactamente la cantidad de bytes necesarios de una vez. Esto elimina la necesidad de múltiples llamadas `read()` y mejora la eficiencia de la comunicación. Para minimizar la sobrecarga de datos, todos los datos que pueden ser pasados a números enteros se envían parseados como tales.
 
 **Mensaje de Apuesta (Cliente a Servidor):**
 ```
 | Campo        | Tipo      | Tamaño    | Descripción                    |
 |--------------|-----------|-----------|--------------------------------|
+| message_len  | uint32    | 4 bytes   | Longitud total del mensaje     |
 | client_id    | uint32    | 4 bytes   | ID del cliente (big endian)    |
 | nombre_len   | uint32    | 4 bytes   | Longitud del nombre            |
 | nombre       | string    | variable  | Nombre del apostador           |
@@ -353,6 +354,7 @@ Se extendió el protocolo binario para soportar batches de apuestas:
 ```
 | Campo         | Tipo      | Tamaño    | Descripción                    |
 |---------------|-----------|-----------|--------------------------------|
+| message_len   | uint32    | 4 bytes   | Longitud total del mensaje     |
 | client_id     | uint32    | 4 bytes   | ID del cliente (big endian)    |
 | num_apuestas  | uint32    | 4 bytes   | Cantidad de apuestas en batch  |
 | apuestas      | apuesta[] | variable  | Array de apuestas              |
@@ -393,6 +395,7 @@ Se extendió el protocolo para soportar diferentes tipos de mensajes mediante la
 ```
 | Campo        | Tipo      | Tamaño    | Descripción                    |
 |--------------|-----------|-----------|--------------------------------|
+| message_len  | uint32    | 4 bytes   | Longitud total del mensaje     |
 | message_type | uint32    | 4 bytes   | Tipo de mensaje (2)            |
 | client_id    | uint32    | 4 bytes   | ID del cliente (big endian)    |
 ```
@@ -401,6 +404,7 @@ Se extendió el protocolo para soportar diferentes tipos de mensajes mediante la
 ```
 | Campo        | Tipo      | Tamaño    | Descripción                    |
 |--------------|-----------|-----------|--------------------------------|
+| message_len  | uint32    | 4 bytes   | Longitud total del mensaje     |
 | message_type | uint32    | 4 bytes   | Tipo de mensaje (3)            |
 | client_id    | uint32    | 4 bytes   | ID del cliente (big endian)    |
 ```

@@ -37,13 +37,37 @@ type BatchData struct {
 	Bets     []BetData
 }
 
-// Protocol: client_id(4), batch_size(4), [bet1, bet2, ...]
+func calculateBatchMessageSize(batch BatchData) int {
+	// client_id (4 bytes) + batch_size (4 bytes)
+	size := 4 + 4
+	
+	// For each bet: nombre_len(4) + nombre + apellido_len(4) + apellido + documento(4) + nacimiento(4) + numero(4)
+	for _, bet := range batch.Bets {
+		size += 4 + len(bet.Nombre) // nombre_len + nombre
+		size += 4 + len(bet.Apellido) // apellido_len + apellido
+		size += 4 // documento
+		size += 4 // nacimiento
+		size += 4 // numero
+	}
+	
+	return size
+}
+
+// Protocol: total_message_length(4), client_id(4), batch_size(4), [bet1, bet2, ...]
 // Where each bet: nombre_len(4), nombre, apellido_len(4), apellido, documento(4), nacimiento(4), numero(4)
 func SendBetBatch(conn net.Conn, batch BatchData) error {
 	// Message type (4 bytes)
 	err := binary.Write(conn, binary.BigEndian, uint32(MessageTypeBatch))
 	if err != nil {
 		protocolLog.Errorf("action: send_bet_batch | result: fail | field: message_type | error: %v", err)
+		return err
+	}
+
+	messageSize := calculateBatchMessageSize(batch)
+	
+	err = binary.Write(conn, binary.BigEndian, uint32(messageSize))
+	if err != nil {
+		protocolLog.Errorf("action: send_bet_batch | result: fail | field: message_length | error: %v", err)
 		return err
 	}
 
@@ -75,7 +99,7 @@ func SendBetBatch(conn net.Conn, batch BatchData) error {
 		}
 	}
 
-	protocolLog.Debugf("action: send_bet_batch | result: success | client_id: %s | batch_size: %d", batch.ClientID, batchSize)
+	protocolLog.Debugf("action: send_bet_batch | result: success | client_id: %s | batch_size: %d | message_size: %d", batch.ClientID, batchSize, messageSize)
 	return nil
 }
 
@@ -191,6 +215,14 @@ func SendFinishedNotification(conn net.Conn, clientID string) error {
 		return err
 	}
 
+	// Message length (4 bytes)
+	messageLength := uint32(4)
+	err = binary.Write(conn, binary.BigEndian, messageLength)
+	if err != nil {
+		protocolLog.Errorf("action: send_finished_notification | result: fail | field: message_length | error: %v", err)
+		return err
+	}
+
 	// Client ID (4 bytes)
 	clientIDInt, err := strconv.ParseUint(clientID, 10, 32)
 	if err != nil {
@@ -212,6 +244,14 @@ func SendQueryWinners(conn net.Conn, clientID string) error {
 	err := binary.Write(conn, binary.BigEndian, uint32(MessageTypeQueryWinners))
 	if err != nil {
 		protocolLog.Errorf("action: send_query_winners | result: fail | field: message_type | error: %v", err)
+		return err
+	}
+
+	// Message length (4 bytes)
+	messageLength := uint32(4)
+	err = binary.Write(conn, binary.BigEndian, messageLength)
+	if err != nil {
+		protocolLog.Errorf("action: send_query_winners | result: fail | field: message_length | error: %v", err)
 		return err
 	}
 

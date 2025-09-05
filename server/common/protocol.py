@@ -28,22 +28,37 @@ def receive_bet_batch(client_sock) -> Optional[Tuple[str, list]]:
     """
     Receive a batch of bets from client socket
     
-    Protocol: client_id(4), batch_size(4), then batch_size number of bets
+    Protocol: total_message_length(4), client_id(4), batch_size(4), then batch_size number of bets
     Where each bet: nombre_len(4), nombre, apellido_len(4), apellido, documento(4), nacimiento(4), numero(4)
     """
     try:
-        client_id_bytes = recv_all(client_sock, 4)
-        if not client_id_bytes:
-            logging.error("action: receive_bet_batch | result: fail | field: client_id | error: failed to receive data")
+        message_length_bytes = recv_all(client_sock, 4)
+        if not message_length_bytes:
+            logging.error("action: receive_bet_batch | result: fail | field: message_length | error: failed to receive data")
             return None
-        client_id = str(unpack_uint32_be(client_id_bytes))
+        message_length = unpack_uint32_be(message_length_bytes)
         
-        batch_size_bytes = recv_all(client_sock, 4)
-        if not batch_size_bytes:
-            logging.error("action: receive_bet_batch | result: fail | field: batch_size | error: failed to receive data")
+        message_data = recv_all(client_sock, message_length)
+        if not message_data:
+            logging.error(f"action: receive_bet_batch | result: fail | field: message_data | expected_length: {message_length} | error: failed to receive data")
             return None
         
-        batch_size = unpack_uint32_be(batch_size_bytes)
+        offset = 0
+        
+        # Client ID (4 bytes)
+        if offset + 4 > len(message_data):
+            logging.error("action: receive_bet_batch | result: fail | field: client_id | error: insufficient data")
+            return None
+        client_id = str(unpack_uint32_be(message_data[offset:offset+4]))
+        offset += 4
+        
+        # Batch size (4 bytes)
+        if offset + 4 > len(message_data):
+            logging.error("action: receive_bet_batch | result: fail | field: batch_size | error: insufficient data")
+            return None
+        batch_size = unpack_uint32_be(message_data[offset:offset+4])
+        offset += 4
+        
         logging.debug(f"action: receive_bet_batch | result: in_progress | client_id: {client_id} | batch_size: {batch_size}")
         
         if batch_size == 0:
@@ -53,12 +68,13 @@ def receive_bet_batch(client_sock) -> Optional[Tuple[str, list]]:
         bets_data = []
         
         for i in range(batch_size):
-            bet_result = receive_bet(client_sock)
+            bet_result, new_offset = parse_bet_from_data(message_data, offset)
             if bet_result is None:
-                logging.error(f"action: receive_bet_batch | result: fail | bet_number: {i+1} | error: failed to receive bet")
+                logging.error(f"action: receive_bet_batch | result: fail | bet_number: {i+1} | error: failed to parse bet")
                 return None
             
             bets_data.append(bet_result)
+            offset = new_offset
         
         logging.info(f"action: receive_bet_batch | result: success | client_id: {client_id} | batch_size: {batch_size}")
         return (client_id, bets_data)
@@ -67,54 +83,51 @@ def receive_bet_batch(client_sock) -> Optional[Tuple[str, list]]:
         logging.error(f"action: receive_bet_batch | result: fail | error: {e}")
         return None
 
-def receive_bet(client_sock) -> Optional[Tuple[str, str, str, str, str]]:
-    """
-    Receive a bet data from client socket
-    
-    Protocol: nombre_len(4), nombre, apellido_len(4), apellido, documento(4), nacimiento(4), numero(4)
-    """
+def parse_bet_from_data(message_data: bytes, offset: int) -> Tuple[Optional[Tuple[str, str, str, str, str]], int]:
     try:
+        original_offset = offset
+        
         # Nombre length (4 bytes)
-        nombre_len_bytes = recv_all(client_sock, 4)
-        if not nombre_len_bytes:
-            logging.error("action: receive_bet | result: fail | field: nombre_length | error: failed to receive data")
-            return None
-        nombre_len = unpack_uint32_be(nombre_len_bytes)
+        if offset + 4 > len(message_data):
+            logging.error("action: parse_bet_from_data | result: fail | field: nombre_length | error: insufficient data")
+            return None, original_offset
+        nombre_len = unpack_uint32_be(message_data[offset:offset+4])
+        offset += 4
 
         # Nombre
-        nombre_bytes = recv_all(client_sock, nombre_len)
-        if not nombre_bytes:
-            logging.error(f"action: receive_bet | result: fail | field: nombre | expected_length: {nombre_len} | error: failed to receive data")
-            return None
-        nombre = nombre_bytes.decode('utf-8')
+        if offset + nombre_len > len(message_data):
+            logging.error(f"action: parse_bet_from_data | result: fail | field: nombre | expected_length: {nombre_len} | error: insufficient data")
+            return None, original_offset
+        nombre = message_data[offset:offset+nombre_len].decode('utf-8')
+        offset += nombre_len
 
         # Apellido length (4 bytes)
-        apellido_len_bytes = recv_all(client_sock, 4)
-        if not apellido_len_bytes:
-            logging.error("action: receive_bet | result: fail | field: apellido_length | error: failed to receive data")
-            return None
-        apellido_len = unpack_uint32_be(apellido_len_bytes)
+        if offset + 4 > len(message_data):
+            logging.error("action: parse_bet_from_data | result: fail | field: apellido_length | error: insufficient data")
+            return None, original_offset
+        apellido_len = unpack_uint32_be(message_data[offset:offset+4])
+        offset += 4
 
         # Apellido
-        apellido_bytes = recv_all(client_sock, apellido_len)
-        if not apellido_bytes:
-            logging.error(f"action: receive_bet | result: fail | field: apellido | expected_length: {apellido_len} | error: failed to receive data")
-            return None
-        apellido = apellido_bytes.decode('utf-8')
+        if offset + apellido_len > len(message_data):
+            logging.error(f"action: parse_bet_from_data | result: fail | field: apellido | expected_length: {apellido_len} | error: insufficient data")
+            return None, original_offset
+        apellido = message_data[offset:offset+apellido_len].decode('utf-8')
+        offset += apellido_len
 
         # Documento (4 bytes)
-        documento_bytes = recv_all(client_sock, 4)
-        if not documento_bytes:
-            logging.error("action: receive_bet | result: fail | field: documento | error: failed to receive data")
-            return None
-        documento = unpack_uint32_be(documento_bytes)
+        if offset + 4 > len(message_data):
+            logging.error("action: parse_bet_from_data | result: fail | field: documento | error: insufficient data")
+            return None, original_offset
+        documento = unpack_uint32_be(message_data[offset:offset+4])
+        offset += 4
 
         # Nacimiento (4 bytes)
-        nacimiento_bytes = recv_all(client_sock, 4)
-        if not nacimiento_bytes:
-            logging.error("action: receive_bet | result: fail | field: nacimiento | error: failed to receive data")
-            return None
-        nacimiento_int = unpack_uint32_be(nacimiento_bytes)
+        if offset + 4 > len(message_data):
+            logging.error("action: parse_bet_from_data | result: fail | field: nacimiento | error: insufficient data")
+            return None, original_offset
+        nacimiento_int = unpack_uint32_be(message_data[offset:offset+4])
+        offset += 4
 
         year = nacimiento_int // 10000
         month = (nacimiento_int % 10000) // 100
@@ -122,24 +135,23 @@ def receive_bet(client_sock) -> Optional[Tuple[str, str, str, str, str]]:
         nacimiento = f"{year:04d}-{month:02d}-{day:02d}"
         
         # Numero (4 bytes)
-        numero_bytes = recv_all(client_sock, 4)
-        if not numero_bytes:
-            logging.error("action: receive_bet | result: fail | field: numero | error: failed to receive data")
-            return None
-        numero = unpack_uint32_be(numero_bytes)
+        if offset + 4 > len(message_data):
+            logging.error("action: parse_bet_from_data | result: fail | field: numero | error: insufficient data")
+            return None, original_offset
+        numero = unpack_uint32_be(message_data[offset:offset+4])
+        offset += 4
 
-        return (nombre, apellido, str(documento), nacimiento, str(numero))
+        return (nombre, apellido, str(documento), nacimiento, str(numero)), offset
 
     except ValueError as e:
-        logging.error(f"action: receive_bet | result: fail | error: unpacking failed - {e}")
-        return None
+        logging.error(f"action: parse_bet_from_data | result: fail | error: unpacking failed - {e}")
+        return None, original_offset
     except UnicodeDecodeError as e:
-        logging.error(f"action: receive_bet | result: fail | error: unicode decode failed - {e}")
-        return None
+        logging.error(f"action: parse_bet_from_data | result: fail | error: unicode decode failed - {e}")
+        return None, original_offset
     except Exception as e:
-        logging.error(f"action: receive_bet | result: fail | error: {e}")
-        return None
-
+        logging.error(f"action: parse_bet_from_data | result: fail | error: {e}")
+        return None, original_offset
 
 def send_response(client_sock, success: bool) -> None:
     response_code = RESPONSE_OK if success else RESPONSE_ERROR
@@ -163,13 +175,25 @@ def receive_message_type(client_sock) -> Optional[int]:
         return None
 
 def receive_finished_notification(client_sock) -> Optional[str]:
-    """Receive finished notification message"""
+    """
+    Receive finished notification message
+    Protocol: total_message_length(4), client_id(4)
+    """
     try:
-        client_id_bytes = recv_all(client_sock, 4)
-        if not client_id_bytes:
-            logging.error("action: receive_finished_notification | result: fail | field: client_id | error: failed to receive data")
+        message_length_bytes = recv_all(client_sock, 4)
+        if not message_length_bytes:
+            logging.error("action: receive_finished_notification | result: fail | field: message_length | error: failed to receive data")
             return None
-        client_id = str(unpack_uint32_be(client_id_bytes))
+        message_length = unpack_uint32_be(message_length_bytes)
+        
+        message_data = recv_all(client_sock, message_length)
+        if not message_data:
+            logging.error(f"action: receive_finished_notification | result: fail | field: message_data | expected_length: {message_length} | error: failed to receive data")
+            return None
+        if len(message_data) != 4:
+            logging.error(f"action: receive_finished_notification | result: fail | field: client_id | expected_length: 4 | actual_length: {len(message_data)}")
+            return None
+        client_id = str(unpack_uint32_be(message_data))
         
         logging.debug(f"action: receive_finished_notification | result: success | client_id: {client_id}")
         return client_id
@@ -178,13 +202,26 @@ def receive_finished_notification(client_sock) -> Optional[str]:
         return None
 
 def receive_query_winners(client_sock) -> Optional[str]:
-    """Receive query winners message"""
+    """
+    Receive query winners message
+    Protocol: total_message_length(4), client_id(4)
+    """
     try:
-        client_id_bytes = recv_all(client_sock, 4)
-        if not client_id_bytes:
-            logging.error("action: receive_query_winners | result: fail | field: client_id | error: failed to receive data")
+        message_length_bytes = recv_all(client_sock, 4)
+        if not message_length_bytes:
+            logging.error("action: receive_query_winners | result: fail | field: message_length | error: failed to receive data")
             return None
-        client_id = str(unpack_uint32_be(client_id_bytes))
+        message_length = unpack_uint32_be(message_length_bytes)
+        
+        message_data = recv_all(client_sock, message_length)
+        if not message_data:
+            logging.error(f"action: receive_query_winners | result: fail | field: message_data | expected_length: {message_length} | error: failed to receive data")
+            return None
+        
+        if len(message_data) != 4:
+            logging.error(f"action: receive_query_winners | result: fail | field: client_id | expected_length: 4 | actual_length: {len(message_data)}")
+            return None
+        client_id = str(unpack_uint32_be(message_data))
         
         logging.debug(f"action: receive_query_winners | result: success | client_id: {client_id}")
         return client_id
