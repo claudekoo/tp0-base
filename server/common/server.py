@@ -26,12 +26,17 @@ class Server:
         self._finished_agencies_lock = threading.Lock()
         self._lottery_lock = threading.Lock()
         self._client_sockets_lock = threading.Lock()
+        self._lottery_condition = threading.Condition(self._lottery_lock)
         
         signal.signal(signal.SIGTERM, self._signal_handler)
 
     def _signal_handler(self, sig, frame):
         logging.info("action: sigterm_received | result: success")
         self._running = False
+        
+        with self._lottery_condition:
+            self._lottery_condition.notify_all()
+        
         if self._server_socket:
             logging.info("action: close_server_socket | result: success")
             self._server_socket.shutdown(socket.SHUT_RDWR)
@@ -172,10 +177,11 @@ class Server:
                     self._finished_agencies.add(client_id)
                     logging.debug(f"action: finished_notification_received | result: success | client_id: {client_id} | finished_agencies: {len(self._finished_agencies)}")
                     
-                    with self._lottery_lock:
+                    with self._lottery_condition:
                         if len(self._finished_agencies) == self._num_agencies and not self._lottery_done:
                             self._lottery_done = True
                             logging.info("action: sorteo | result: success")
+                            self._lottery_condition.notify_all()
             
                 send_response(client_sock, True)
             else:
@@ -189,8 +195,11 @@ class Server:
         try:
             client_id = receive_query_winners(client_sock)
             if client_id is not None:
-                with self._lottery_lock:
-                    if not self._lottery_done:
+                with self._lottery_condition:
+                    while not self._lottery_done and self._running:
+                        self._lottery_condition.wait()
+                    
+                    if not self._running:
                         send_response(client_sock, False)
                         return
             
