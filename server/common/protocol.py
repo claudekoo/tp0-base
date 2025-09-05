@@ -24,6 +24,15 @@ def recv_all(sock, n):
         data += packet
     return data
 
+def send_all(sock, data):
+    """Helper function to send all data, handling short writes"""
+    total_sent = 0
+    while total_sent < len(data):
+        sent = sock.send(data[total_sent:])
+        if sent == 0:
+            raise RuntimeError("Socket connection broken")
+        total_sent += sent
+
 def receive_bet_batch(client_sock) -> Optional[Tuple[str, list]]:
     """
     Receive a batch of bets from client socket
@@ -156,7 +165,7 @@ def parse_bet_from_data(message_data: bytes, offset: int) -> Tuple[Optional[Tupl
 def send_response(client_sock, success: bool) -> None:
     response_code = RESPONSE_OK if success else RESPONSE_ERROR
     try:
-        client_sock.send(bytes([response_code]))
+        send_all(client_sock, bytes([response_code]))
         logging.debug(f"action: send_response | result: success | response_code: {response_code}")
     except Exception as e:
         logging.error(f"action: send_response | result: fail | response_code: {response_code} | error: {e}")
@@ -235,19 +244,19 @@ def pack_uint32_be(value: int) -> bytes:
 
 def send_winners(client_sock, winners: list[str]) -> None:
     try:
-        client_sock.send(bytes([RESPONSE_OK]))
+        send_all(client_sock, bytes([RESPONSE_OK]))
         
         winners_count = len(winners)
-        client_sock.send(pack_uint32_be(winners_count))
+        send_all(client_sock, pack_uint32_be(winners_count))
         
         for winner_documento in winners:
             documento_int = int(winner_documento)
-            client_sock.send(pack_uint32_be(documento_int))
+            send_all(client_sock, pack_uint32_be(documento_int))
         
         logging.debug(f"action: send_winners | result: success | winners_count: {winners_count}")
     except Exception as e:
         logging.error(f"action: send_winners | result: fail | error: {e}")
         try:
-            client_sock.send(bytes([RESPONSE_ERROR]))
+            send_all(client_sock, bytes([RESPONSE_ERROR]))
         except:
             pass
