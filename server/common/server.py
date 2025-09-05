@@ -34,10 +34,12 @@ class Server:
         self._running = False
         if self._server_socket:
             logging.info("action: close_server_socket | result: success")
+            self._server_socket.shutdown(socket.SHUT_RDWR)
             self._server_socket.close()
         
         with self._client_sockets_lock:
             for client_sock in self._client_sockets:
+                client_sock.shutdown(socket.SHUT_RDWR)
                 client_sock.close()
 
         for thread in self._client_threads:
